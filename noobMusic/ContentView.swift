@@ -15,14 +15,16 @@ struct ContentView: View {
     @StateObject private var mic         = MicListenerEngine()
     @StateObject private var progression = ProgressionEngine()
     @StateObject private var themeEngine = ThemeEngine()
+    @StateObject private var practiceLog = PracticeLogEngine()
 
     @State private var lastStrumTime   : Date          = .distantPast
     @State private var chordCategory   : ChordCategory = .major
     @State private var showMetronome   : Bool          = false
     @State private var showMic         : Bool          = false
-    @State private var showProgression : Bool          = false
     @State private var showThemePicker : Bool          = false
     @State private var assigningSlot   : Int?          = nil
+    @State private var showStrumPractice: Bool         = false
+    @State private var showPracticeLog : Bool          = false
 
     // ── Drag-reorder state ───────────────────────────────────────────
     @State private var panelOrder: [PanelID] = {
@@ -71,6 +73,19 @@ struct ContentView: View {
             }
             progression.updateBPM(metronome.bpm)
         }
+        .fullScreenCover(isPresented: $showStrumPractice) {
+            StrumPracticeView(
+                vm: vm,
+                metronome: metronome,
+                progression: progression,
+                themeEngine: themeEngine
+            )
+        }
+        .fullScreenCover(isPresented: $showPracticeLog) {
+            PracticeLogView(log: practiceLog, themeEngine: themeEngine)
+        }
+        .onAppear  { practiceLog.startTracking() }
+        .onDisappear { practiceLog.stopTracking() }
     }
 
     // MARK: - Dynamic sizing
@@ -103,7 +118,6 @@ struct ContentView: View {
             collapsiblePanels
                 .padding(.horizontal, 16)
                 .animation(.spring(response: 0.28), value: showMetronome)
-                .animation(.spring(response: 0.28), value: showProgression)
                 .animation(.spring(response: 0.28), value: showMic)
 
             chordSection.padding(.top, 10)
@@ -113,32 +127,39 @@ struct ContentView: View {
 
     // MARK: - Landscape layout
     private func landscapeLayout(geo: GeometryProxy) -> some View {
-        VStack(spacing: 0) {
-            headerBar.padding(.top, 4)
+        // Reserve space: header ~48pt, safe area breathing room
+        let headerH  : CGFloat = 48
+        let hPad     : CGFloat = 12   // horizontal edge padding
+        let colGap   : CGFloat = 10
+        let leftW    = (geo.size.width - hPad * 2 - colGap) * 0.54
+        let rightW   = (geo.size.width - hPad * 2 - colGap) * 0.46
+        let fbH      = geo.size.height - headerH - 8
 
-            HStack(alignment: .top, spacing: 10) {
-                // Left: fretboard fills ~50% width
+        return VStack(spacing: 0) {
+            headerBar
+                .padding(.top, 4)
+                .frame(height: headerH)
+
+            HStack(alignment: .top, spacing: colGap) {
+                // Left: fretboard only — fills full remaining height
                 FretboardView(vm: vm)
-                    .frame(width: geo.size.width * 0.50,
-                           height: fretboardHeight(geo))
-                    .padding(.leading, 10)
+                    .frame(width: leftW, height: fbH)
 
-                // Right: panels + collapsibles in scrollable column
+                // Right: panels + collapsibles + chord section — all scrollable
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 8) {
-                        orderedPanelsVStack(geo: geo)
+                        orderedPanelsVStack(panelWidth: rightW, geo: geo)
                         collapsiblePanels
                             .animation(.spring(response: 0.28), value: showMetronome)
-                            .animation(.spring(response: 0.28), value: showProgression)
                             .animation(.spring(response: 0.28), value: showMic)
+                        // Chord section lives in the right column in landscape
+                        chordSectionCompact(width: rightW)
                     }
-                    .padding(.trailing, 10)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 12)
                 }
+                .frame(width: rightW)
             }
-
-            chordSection.padding(.top, 4)
-            Spacer(minLength: 2)
+            .padding(.horizontal, hPad)
         }
     }
 
@@ -154,11 +175,10 @@ struct ContentView: View {
     }
 
     // MARK: - Ordered panels — VStack (landscape)
-    private func orderedPanelsVStack(geo: GeometryProxy) -> some View {
-        let panelW = geo.size.width * 0.48 - 20
-        return VStack(spacing: 8) {
+    private func orderedPanelsVStack(panelWidth: CGFloat, geo: GeometryProxy) -> some View {
+        VStack(spacing: 8) {
             panelForEach(
-                size: CGSize(width: panelW, height: middlePanelHeight(geo)),
+                size: CGSize(width: panelWidth, height: middlePanelHeight(geo)),
                 axis: .vertical
             )
         }
@@ -256,11 +276,6 @@ struct ContentView: View {
                 .padding(.top, 8)
                 .transition(.move(edge: .top).combined(with: .opacity))
         }
-        if showProgression {
-            progressionBar
-                .padding(.top, 8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-        }
         if showMic {
             micPanel
                 .padding(.top, 8)
@@ -302,11 +317,6 @@ struct ContentView: View {
                           color: theme.accent) {
                 withAnimation(.spring(response: 0.28)) { showMetronome.toggle() }
             }
-            toolbarButton(icon: "music.note.list",
-                          active: showProgression || progression.isPlaying,
-                          color: theme.accent) {
-                withAnimation(.spring(response: 0.28)) { showProgression.toggle() }
-            }
             toolbarButton(icon: "mic.fill",
                           active: showMic || mic.isListening,
                           color: Color(red: 0.4, green: 0.9, blue: 0.7)) {
@@ -319,6 +329,16 @@ struct ContentView: View {
             }
             toolbarButton(icon: "speaker.slash.fill", active: false, color: .white.opacity(0.55)) {
                 withAnimation { vm.muteAll() }
+            }
+            toolbarButton(icon: "figure.strengthtraining.traditional",
+                          active: false,
+                          color: theme.accent2) {
+                showStrumPractice = true
+            }
+            toolbarButton(icon: "calendar.badge.checkmark",
+                          active: showPracticeLog,
+                          color: Color(red: 0.4, green: 0.85, blue: 0.5)) {
+                showPracticeLog = true
             }
         }
         .padding(.horizontal, 18)
@@ -864,6 +884,52 @@ struct ContentView: View {
                 .padding(.horizontal, 18)
             }
         }
+    }
+
+    // MARK: - Chord Section (compact, width-constrained — used in landscape right column)
+    private func chordSectionCompact(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Category tabs — horizontal scroll, constrained width
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(ChordCategory.allCases) { cat in
+                        Button {
+                            withAnimation(.spring(response: 0.25)) { chordCategory = cat }
+                        } label: {
+                            Text(cat.rawValue)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(chordCategory == cat ? .black : .white.opacity(0.6))
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 5)
+                                .background(chordCategory == cat
+                                            ? theme.accent
+                                            : Color.white.opacity(0.10), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            .frame(width: width)
+
+            // Chord cards — horizontal scroll, constrained width
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Chord.presets(for: chordCategory)) { chord in
+                        chordButton(chord)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            .frame(width: width)
+        }
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1))
+        )
     }
 
     private func chordButton(_ chord: Chord) -> some View {

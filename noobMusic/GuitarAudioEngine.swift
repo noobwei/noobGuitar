@@ -9,62 +9,61 @@ final class GuitarAudioEngine: ObservableObject {
     @Published var isRunning = false
 
     // MARK: Private audio graph
-    private let engine      = AVAudioEngine()
-    private var sourceNode : AVAudioSourceNode?
+    private let engine     = AVAudioEngine()
+    private var sourceNode: AVAudioSourceNode?
 
-    // MARK: Per-string wavetable buffers (one ring-buffer per string)
+    // MARK: Delay-line constants
     private let stringCount = 6
-    // Delay-line storage  (max period ~ 44100/80 ≈ 551 samples)
-    private var delayLines  : [[Float]] = []
-    private var positions   : [Int]     = []
-    private var periodSizes : [Int]     = []
-    private var amplitudes  : [Float]   = []   // per-string gain (decays naturally via KS)
-    private var pluckQueues : [Bool]    = []   // flag: string needs re-trigger
-    private var pluckNoise  : [[Float]] = []   // pre-computed excitation noise
+    private let maxPeriod   = 560          // > E2 period (≈535 samples @ 44 100 Hz)
 
-    // Thread-safety: audio callback reads these; Swift concurrency not needed —
-    // we use a simple spin-safe atomic flag approach via a queue flag array.
+    // Flat, C-style delay buffer: string s, sample i  →  delayMem[s * maxPeriod + i]
+    //
+    // Allocated once in init, freed in deinit.  NEVER reallocated or moved.
+    // A raw UnsafeMutablePointer has ZERO Swift ARC / COW overhead, so the audio
+    // thread and the main thread can safely access different string slots (different
+    // base offsets) with no memory corruption.
+    private let delayMem: UnsafeMutablePointer<Float>
 
-    private let sampleRate: Double = 44100
-    // Standard guitar open-string MIDI notes: E2 A2 D3 G3 B3 E4
-    static let openStringMidi: [Int] = [40, 45, 50, 55, 59, 64]
-    static let openStringNames = ["E2","A2","D3","G3","B3","E4"]
+    // Per-string scalar state (only written from main thread before raising pluckQueues)
+    private var positions   = [Int](repeating: 0,     count: 6)
+    private var periodSizes = [Int](repeating: 1,     count: 6)
+    private var amplitudes  = [Float](repeating: 0,   count: 6)
+    /// Written LAST by main thread after noise is committed; polled by audio thread.
+    private var pluckQueues = [Bool](repeating: false, count: 6)
 
-    // Capo / fret offset per string (0 = open)
-    private var fretOffsets: [Int] = Array(repeating: 0, count: 6)
+    private let sampleRate: Double = 44_100
+    static let openStringMidi:  [Int]    = [40, 45, 50, 55, 59, 64]
+    static let openStringNames: [String] = ["E2","A2","D3","G3","B3","E4"]
 
-    // MARK: - Init
+    // MARK: - Init / Deinit
     init() {
-        setupDelayLines()
+        // One-time flat allocation — never resized
+        let capacity = 6 * 560
+        delayMem = .allocate(capacity: capacity)
+        delayMem.initialize(repeating: 0, count: capacity)
+
+        for i in 0..<6 { periodSizes[i] = midiToPeriod(Self.openStringMidi[i]) }
         setupAudioEngine()
     }
 
-    // MARK: - Setup
-    private func setupDelayLines() {
-        delayLines  = Array(repeating: [], count: stringCount)
-        positions   = Array(repeating: 0,  count: stringCount)
-        periodSizes = Array(repeating: 1,  count: stringCount)
-        amplitudes  = Array(repeating: 0,  count: stringCount)
-        pluckQueues = Array(repeating: false, count: stringCount)
-        pluckNoise  = Array(repeating: [], count: stringCount)
-
-        for i in 0..<stringCount {
-            let midi   = Self.openStringMidi[i]
-            let period = midiToPeriod(midi)
-            delayLines[i]  = Array(repeating: 0, count: period)
-            periodSizes[i] = period
-        }
+    deinit {
+        engine.stop()
+        delayMem.deinitialize(count: 6 * 560)
+        delayMem.deallocate()
     }
+
+    // MARK: - Helpers
+    @inline(__always)
+    private func base(_ s: Int) -> Int { s * maxPeriod }
 
     private func midiToPeriod(_ midi: Int) -> Int {
         let freq = 440.0 * pow(2.0, Double(midi - 69) / 12.0)
         return max(2, Int(sampleRate / freq))
     }
 
+    // MARK: - Audio engine setup
     private func setupAudioEngine() {
-        let format = AVAudioFormat(
-            standardFormatWithSampleRate: sampleRate,
-            channels: 1)!
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
 
         let node = AVAudioSourceNode(format: format) { [weak self] _, _, frameCount, audioBufferList in
             guard let self else { return noErr }
@@ -86,7 +85,7 @@ final class GuitarAudioEngine: ObservableObject {
         }
     }
 
-    // MARK: - Realtime render (called on audio thread — no allocations)
+    // MARK: - Realtime render  (audio thread — zero allocations, zero ARC)
     private func render(frameCount: Int, ablPointer: UnsafeMutablePointer<AudioBufferList>) {
         let abl = UnsafeMutableAudioBufferListPointer(ablPointer)
         guard let buf = abl[0].mData?.assumingMemoryBound(to: Float.self) else { return }
@@ -95,15 +94,11 @@ final class GuitarAudioEngine: ObservableObject {
             var sample: Float = 0
 
             for s in 0..<stringCount {
-                // Re-trigger: fill delay line with noise if flagged
+                // Noise was written into delayMem by pluck() before this flag was set.
                 if pluckQueues[s] {
                     pluckQueues[s] = false
-                    let noise = pluckNoise[s]
-                    for k in 0..<periodSizes[s] {
-                        delayLines[s][k] = noise[k]
-                    }
-                    positions[s] = 0
-                    amplitudes[s] = 1.0
+                    positions[s]   = 0
+                    amplitudes[s]  = 1.0
                 }
 
                 guard amplitudes[s] > 0.0001 else { continue }
@@ -111,21 +106,19 @@ final class GuitarAudioEngine: ObservableObject {
                 let period = periodSizes[s]
                 let pos    = positions[s]
                 let next   = (pos + 1) % period
+                let b      = base(s)
 
-                // Karplus-Strong: average current and next sample (low-pass)
-                let filtered = 0.998 * 0.5 * (delayLines[s][pos] + delayLines[s][next])
-                delayLines[s][pos] = filtered
+                // Karplus-Strong low-pass average
+                let filtered = 0.998 * 0.5 * (delayMem[b + pos] + delayMem[b + next])
+                delayMem[b + pos] = filtered
                 sample += filtered * amplitudes[s]
 
-                positions[s] = next
-
-                // Amplitude envelope: KS decay is already baked in via the filter,
-                // but we track amplitude from the RMS so we can silence the string
+                positions[s]   = next
                 amplitudes[s] *= 0.99997
                 if amplitudes[s] < 0.0001 { amplitudes[s] = 0 }
             }
 
-            buf[frame] = sample * 0.18  // mix-down gain
+            buf[frame] = sample * 0.18   // mix-down gain
         }
     }
 
@@ -137,34 +130,37 @@ final class GuitarAudioEngine: ObservableObject {
 
         let midi   = Self.openStringMidi[string] + fret
         let period = midiToPeriod(midi)
+        let b      = base(string)
 
-        // Build excitation noise (off audio thread is fine — we copy atomically via flag)
-        var noise = [Float](repeating: 0, count: period)
-        for i in 0..<period { noise[i] = Float.random(in: -1...1) }
+        // Update period before writing noise so the audio thread (if it somehow
+        // wakes up mid-write) never indexes past the allocated region.
+        periodSizes[string] = period
 
-        // Resize delay line if period changed
-        if period != periodSizes[string] {
-            delayLines[string] = Array(repeating: 0, count: period)
-            periodSizes[string] = period
-        }
-        pluckNoise[string]  = noise
+        // Write excitation noise directly into the flat buffer — no Swift array,
+        // no COW, no ARC.  Audio thread won't touch this string until the flag below.
+        for i in 0..<period         { delayMem[b + i] = Float.random(in: -1...1) }
+        for i in period..<maxPeriod { delayMem[b + i] = 0 }   // silence tail
+
         positions[string]   = 0
-        pluckQueues[string] = true   // audio thread picks this up
         amplitudes[string]  = 1.0
+        pluckQueues[string] = true   // signal audio thread — written LAST
     }
 
     /// Mute a string immediately.
     func mute(string: Int) {
         guard string >= 0 && string < stringCount else { return }
         amplitudes[string] = 0
-        for i in 0..<delayLines[string].count { delayLines[string][i] = 0 }
+        let b = base(string)
+        for i in 0..<maxPeriod { delayMem[b + i] = 0 }
     }
 
-    /// Strum all 6 strings (low → high) with a small delay between each.
+    /// Strum all 6 strings with a small inter-string delay.
     func strum(frets: [Int], direction: StrumDirection = .downward, delay: TimeInterval = 0.03) {
-        let order = direction == .downward ? Array(0..<stringCount) : Array((0..<stringCount).reversed())
+        let order = direction == .downward
+            ? Array(0..<stringCount)
+            : Array((0..<stringCount).reversed())
         for (i, s) in order.enumerated() {
-            let fret = (frets.indices.contains(s)) ? frets[s] : 0
+            let fret = frets.indices.contains(s) ? frets[s] : 0
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * delay) { [weak self] in
                 self?.pluck(string: s, fret: fret)
             }

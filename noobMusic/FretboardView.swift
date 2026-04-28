@@ -269,10 +269,10 @@ struct FretboardView: View {
                     }
             )
             // ── Lock / fret-range button overlay ─────────────────────
-            .overlay(alignment: .topTrailing) {
+            // Lives in the top-left corner cell (labelW × labelH) — never
+            // overlaps fret labels or string names. Long-press to toggle.
+            .overlay(alignment: .topLeading) {
                 lockBadge(cellW: cellW, labelH: labelH)
-                    .padding(.trailing, 6)
-                    .padding(.top, 2)
             }
         }
         // Auto-scroll to chord when selected from library
@@ -286,44 +286,41 @@ struct FretboardView: View {
     }
 
     // MARK: - Lock Badge
+    // A compact circle in the top-left corner cell (labelW × labelH).
+    // Long-press to toggle lock; shows current fret range when unlocked.
     private func lockBadge(cellW: CGFloat, labelH: CGFloat) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.25)) {
-                isLocked.toggle()
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
-                    .font(.system(size: 11, weight: .bold))
+        ZStack {
+            // Background circle
+            Circle()
+                .fill(isLocked
+                      ? Color.orange.opacity(0.18)
+                      : Color.white.opacity(0.12))
+                .overlay(
+                    Circle()
+                        .stroke(isLocked
+                                ? Color.orange.opacity(0.55)
+                                : Color.white.opacity(0.25),
+                                lineWidth: 1)
+                )
+                .frame(width: labelH - 4, height: labelH - 4)
 
-                if isLocked {
-                    // Show compact range label when locked
-                    Text("\(startFret)–\(startFret + visibleFrets - 1)")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                } else {
-                    // Show "slide" hint + current range when unlocked
-                    Text("← \(startFret)–\(startFret + visibleFrets - 1)品 →")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                }
-            }
-            .foregroundColor(isLocked ? Color.orange.opacity(0.90) : Color.white.opacity(0.60))
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(isLocked
-                          ? Color.orange.opacity(0.14)
-                          : Color.white.opacity(0.09))
-                    .overlay(
-                        Capsule()
-                            .stroke(isLocked
-                                    ? Color.orange.opacity(0.40)
-                                    : Color.white.opacity(0.20),
-                                    lineWidth: 1)
-                    )
-            )
+            Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(isLocked ? Color.orange.opacity(0.95) : Color.white.opacity(0.65))
         }
-        .buttonStyle(.plain)
+        // Fret-range tooltip when unlocked
+        .overlay(alignment: .trailing) {
+            EmptyView()
+        }
+        .frame(width: labelH, height: labelH)          // fills the corner cell
+        .contentShape(Rectangle())
+        .gesture(
+            LongPressGesture(minimumDuration: 0.4)
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.25)) { isLocked.toggle() }
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+        )
     }
 
     // MARK: - Auto-scroll helper

@@ -15,11 +15,13 @@ final class ProgressionEngine: ObservableObject {
     @Published var loopMode: Bool = true
 
     // ── State ─────────────────────────────────────────────────────────
-    @Published var slots       : [Chord?] = Array(repeating: nil, count: slotCount)
-    @Published var currentSlot : Int      = 0
-    @Published var isPlaying   : Bool     = false
+    @Published var slots        : [Chord?] = Array(repeating: nil, count: slotCount)
+    @Published var currentSlot  : Int      = 0
+    @Published var isPlaying    : Bool     = false
     /// Beat counter within the current chord slot (0 …< beatsPerChord)
-    @Published var beatInSlot  : Int      = 0
+    @Published var beatInSlot   : Int      = 0
+    /// The chord currently being played (nil when stopped or slot is empty)
+    @Published var currentChord : Chord?   = nil
 
     // ── Callbacks ─────────────────────────────────────────────────────
     /// Called on the main thread whenever a chord slot becomes active.
@@ -37,7 +39,8 @@ final class ProgressionEngine: ObservableObject {
         isPlaying = true
         beatInSlot = 0
         // Fire current slot immediately
-        onChordChange?(slots[currentSlot])
+        currentChord = slots[currentSlot]
+        onChordChange?(currentChord)
         scheduleTimer()
     }
 
@@ -46,6 +49,7 @@ final class ProgressionEngine: ObservableObject {
         timer = nil
         isPlaying = false
         beatInSlot = 0
+        currentChord = nil
     }
 
     func toggle(bpm: Int) {
@@ -72,6 +76,7 @@ final class ProgressionEngine: ObservableObject {
         slots = Array(repeating: nil, count: Self.slotCount)
         stop()
         currentSlot = 0
+        currentChord = nil
     }
 
     // ── Filled slots (for playback range) ────────────────────────────
@@ -108,7 +113,8 @@ final class ProgressionEngine: ObservableObject {
             }
         }
         currentSlot = next
-        onChordChange?(slots[currentSlot])
+        currentChord = slots[currentSlot]
+        onChordChange?(currentChord)
     }
 
     private func restartIfPlaying() {
