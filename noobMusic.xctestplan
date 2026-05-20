@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "21735F61-37E3-492A-845F-DB27D844E20F",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:noobMusic.xcodeproj",
+      "identifier" : "1F67BD9C2F9F55A00011876F",
+      "name" : "noobMusic"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:noobMusic.xcodeproj",
+        "identifier" : "1F67BDA92F9F55A20011876F",
+        "name" : "noobMusicTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:noobMusic.xcodeproj",
+        "identifier" : "1F67BDB32F9F55A20011876F",
+        "name" : "noobMusicUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

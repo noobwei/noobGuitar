@@ -5,6 +5,7 @@ struct PracticeLogView: View {
     @ObservedObject var log: PracticeLogEngine
     @ObservedObject var themeEngine: ThemeEngine
     @Environment(\.dismiss) private var dismiss
+    private let palette = SurfacePalette()
 
     // Which month is shown (offset from today's month, 0 = current)
     @State private var monthOffset: Int = 0
@@ -37,8 +38,8 @@ struct PracticeLogView: View {
         ZStack {
             // Background
             LinearGradient(
-                colors: [Color(red: 0.08, green: 0.05, blue: 0.02),
-                         Color(red: 0.14, green: 0.09, blue: 0.03)],
+                colors: [palette.backgroundTop,
+                         palette.backgroundBottom],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
@@ -74,7 +75,7 @@ struct PracticeLogView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
     }
 
     // MARK: - Header
@@ -83,20 +84,20 @@ struct PracticeLogView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("练习打卡")
                     .font(.system(size: 22, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
-                Text("坚持练习，每天进步")
+                    .foregroundColor(palette.title)
+                Text("练习记录")
                     .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.40))
+                    .foregroundColor(palette.body)
             }
             Spacer()
             Button {
                 dismiss()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.70))
-                    .padding(10)
-                    .background(Color.white.opacity(0.10), in: Circle())
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.left")
+                    Text("返回")
+                }
+                .appBackButtonStyle()
             }
         }
     }
@@ -107,7 +108,7 @@ struct PracticeLogView: View {
             // Live timer ring
             ZStack {
                 Circle()
-                    .stroke(Color.white.opacity(0.10), lineWidth: 6)
+                    .stroke(palette.softFill, lineWidth: 6)
                     .frame(width: 72, height: 72)
                 let level = log.heatLevel(for: Date())
                 Circle()
@@ -119,10 +120,10 @@ struct PracticeLogView: View {
                 VStack(spacing: 0) {
                     Text(log.isTracking ? "计时中" : "今天")
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.45))
+                        .foregroundColor(palette.muted)
                     Text(log.todaySeconds.practiceTimeString)
                         .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundColor(log.isTracking ? theme.accent : .white)
+                        .foregroundColor(log.isTracking ? theme.accent : palette.title)
                         .contentTransition(.numericText())
                 }
             }
@@ -130,15 +131,15 @@ struct PracticeLogView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(todayPracticeLabel)
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
                 Text("目标：30 分钟 · 已完成 \(Int(min(1.0, Double(log.todaySeconds) / 1800.0) * 100))%")
                     .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(palette.body)
 
                 // 30-min progress bar
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.10))
+                        Capsule().fill(palette.softFill)
                             .frame(height: 5)
                         Capsule().fill(theme.accent)
                             .frame(width: g.size.width * CGFloat(min(1.0, Double(log.todaySeconds) / 1800.0)),
@@ -154,9 +155,9 @@ struct PracticeLogView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(Color.white.opacity(0.06))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 18)
-                    .stroke(log.isTracking ? theme.accent.opacity(0.45) : Color.white.opacity(0.10),
+                    .stroke(log.isTracking ? theme.accent.opacity(0.35) : palette.softFill,
                             lineWidth: 1.5))
         )
         .shadow(color: log.isTracking ? theme.glow.opacity(0.25) : .clear, radius: 12)
@@ -195,24 +196,24 @@ struct PracticeLogView: View {
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(value)
                     .font(.system(size: 20, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
                 if !unit.isEmpty {
                     Text(unit)
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.white.opacity(0.55))
+                        .foregroundColor(palette.muted)
                 }
             }
             Text(label)
                 .font(.system(size: 10))
-                .foregroundColor(.white.opacity(0.40))
+                .foregroundColor(palette.body)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.06))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 14)
-                    .stroke(color.opacity(0.20), lineWidth: 1))
+                    .stroke(color.opacity(0.16), lineWidth: 1))
         )
     }
 
@@ -224,23 +225,23 @@ struct PracticeLogView: View {
                 Button { withAnimation { monthOffset -= 1 } } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.65))
+                        .foregroundColor(palette.body)
                         .padding(8)
-                        .background(Color.white.opacity(0.08), in: Circle())
+                        .background(Color.white.opacity(0.76), in: Circle())
                 }
                 Spacer()
                 Text(monthLabel)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
                 Spacer()
                 Button {
                     withAnimation { monthOffset = min(monthOffset + 1, 0) }
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(monthOffset < 0 ? .white.opacity(0.65) : .white.opacity(0.20))
+                        .foregroundColor(monthOffset < 0 ? palette.body : palette.muted.opacity(0.5))
                         .padding(8)
-                        .background(Color.white.opacity(monthOffset < 0 ? 0.08 : 0.04), in: Circle())
+                        .background(Color.white.opacity(monthOffset < 0 ? 0.76 : 0.50), in: Circle())
                 }
                 .disabled(monthOffset >= 0)
             }
@@ -251,7 +252,7 @@ struct PracticeLogView: View {
                 ForEach(["日","一","二","三","四","五","六"], id: \.self) { d in
                     Text(d)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.30))
+                        .foregroundColor(palette.muted)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -273,9 +274,9 @@ struct PracticeLogView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 18)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    .stroke(palette.softFill, lineWidth: 1))
         )
     }
 
@@ -313,7 +314,7 @@ struct PracticeLogView: View {
                             isFuture ? .white.opacity(0.15) :
                             level > 0 ? .white :
                             isToday  ? theme.accent :
-                                       .white.opacity(0.45)
+                                       palette.body
                         )
                 }
             }
@@ -339,10 +340,10 @@ struct PracticeLogView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(label)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
                 Text(secs == 0 ? "当天未练习" : "练习了 \(secs.practiceMinutesString)")
                     .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.55))
+                    .foregroundColor(palette.body)
             }
             Spacer()
             Text(heatLevelLabel(level))
@@ -365,7 +366,7 @@ struct PracticeLogView: View {
         HStack(spacing: 8) {
             Text("练习时长")
                 .font(.system(size: 10))
-                .foregroundColor(.white.opacity(0.35))
+                .foregroundColor(palette.muted)
             Spacer()
             ForEach(0..<5) { level in
                 HStack(spacing: 3) {
@@ -374,7 +375,7 @@ struct PracticeLogView: View {
                         .frame(width: 14, height: 14)
                     Text(legendLabel(level))
                         .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(palette.muted)
                 }
             }
         }
@@ -383,7 +384,7 @@ struct PracticeLogView: View {
     // MARK: - Heat color
     func heatColor(_ level: Int) -> Color {
         switch level {
-        case 0: return Color.white
+        case 0: return Color(red: 0.83, green: 0.80, blue: 0.74)
         case 1: return theme.accent.opacity(0.35)
         case 2: return theme.accent.opacity(0.60)
         case 3: return theme.accent.opacity(0.82)
@@ -434,5 +435,4 @@ struct PracticeLogView: View {
         return stride(from: 0, to: days.count, by: 7).map { Array(days[$0..<$0+7]) }
     }
 }
-
 

@@ -15,6 +15,7 @@ final class MicListenerEngine: ObservableObject {
     @Published var feedbackColor : Color   = .gray
     /// nil = no target set
     var targetChord: Chord? = nil
+    var capoFret: Int = 0
 
     // ── Private audio graph ──────────────────────────────────────────
     private let engine       = AVAudioEngine()
@@ -210,7 +211,7 @@ final class MicListenerEngine: ObservableObject {
         // Compute expected pitch classes from chord's frets
         var expected = Set<Int>()
         for (s, fret) in chord.frets.enumerated() where fret >= 0 {
-            let midi = GuitarAudioEngine.openStringMidi[s] + fret
+            let midi = GuitarAudioEngine.openStringMidi[s] + fret + capoFret
             expected.insert(midi % 12)
         }
         guard !expected.isEmpty, !detected.isEmpty else { return 0 }

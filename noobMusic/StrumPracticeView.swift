@@ -292,6 +292,7 @@ struct StrumPracticeView: View {
     // Progression slot assignment
     @State private var assigningSlot     : Int?          = nil
 
+    private let palette = SurfacePalette()
     private var theme: AppTheme { themeEngine.current }
 
     // The chord that should be displayed / played
@@ -305,8 +306,8 @@ struct StrumPracticeView: View {
             ZStack {
                 // ── Background ────────────────────────────────────────
                 LinearGradient(
-                    colors: [Color(red: 0.06, green: 0.04, blue: 0.10),
-                             Color(red: 0.12, green: 0.08, blue: 0.18)],
+                    colors: [palette.backgroundTop,
+                             palette.backgroundBottom],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -320,7 +321,7 @@ struct StrumPracticeView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .ignoresSafeArea(edges: .bottom)
         // Drive swing animation on every beat
         .onChange(of: metronome.beatFlash) { _, flash in
@@ -429,17 +430,14 @@ struct StrumPracticeView: View {
                     Text("返回")
                         .font(.system(size: 15, weight: .semibold))
                 }
-                .foregroundColor(.white.opacity(0.75))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.10), in: Capsule())
+                .appBackButtonStyle()
             }
 
             Spacer()
 
             Text("扫弦练习")
                 .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundColor(palette.title)
 
             Spacer()
 
@@ -468,7 +466,7 @@ struct StrumPracticeView: View {
             } else {
                 Text("选择和弦开始")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.30))
+                    .foregroundColor(palette.muted)
             }
 
             // Beat dots
@@ -486,7 +484,7 @@ struct StrumPracticeView: View {
         HStack(spacing: 14) {
             // Beat flash indicator
             Circle()
-                .fill(metronome.beatFlash && isPlaying ? theme.accent : Color.white.opacity(0.12))
+                .fill(metronome.beatFlash && isPlaying ? theme.accent : palette.softFill)
                 .frame(width: 32, height: 32)
                 .shadow(color: metronome.beatFlash && isPlaying ? theme.glow.opacity(0.7) : .clear, radius: 8)
                 .animation(.easeOut(duration: 0.05), value: metronome.beatFlash)
@@ -494,7 +492,7 @@ struct StrumPracticeView: View {
             VStack(spacing: 2) {
                 Text("\(metronome.bpm) BPM")
                     .font(.system(size: 22, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
 
                 Slider(
                     value: Binding(
@@ -508,12 +506,7 @@ struct StrumPracticeView: View {
             }
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 14)
-                    .stroke(theme.accent.opacity(0.22), lineWidth: 1))
-        )
+        .appCardStyle(cornerRadius: 14)
     }
 
     // MARK: - Mode picker
@@ -526,9 +519,9 @@ struct StrumPracticeView: View {
                         if isPlaying { stopPractice() }
                     }
                 } label: {
-                    Text(mode.rawValue)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(practiceMode == mode ? .black : .white.opacity(0.55))
+                        Text(mode.rawValue)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(practiceMode == mode ? .black : palette.body)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(
@@ -540,7 +533,7 @@ struct StrumPracticeView: View {
         }
         .clipShape(Capsule())
         .overlay(Capsule().stroke(theme.accent.opacity(0.4), lineWidth: 1.5))
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(palette.cardFill, in: Capsule())
     }
 
     // MARK: - Chord picker section
@@ -565,9 +558,9 @@ struct StrumPracticeView: View {
                         } label: {
                             Text(cat.rawValue)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(chordCategory == cat ? .black : .white.opacity(0.6))
+                                .foregroundColor(chordCategory == cat ? .black : palette.body)
                                 .padding(.horizontal, 11).padding(.vertical, 5)
-                                .background(chordCategory == cat ? theme.accent : Color.white.opacity(0.10),
+                                .background(chordCategory == cat ? theme.accent : palette.cardFill,
                                             in: Capsule())
                         }
                         .buttonStyle(.plain)
@@ -598,12 +591,7 @@ struct StrumPracticeView: View {
             .frame(width: width)
         }
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1))
-        )
+        .appCardStyle(cornerRadius: 14)
     }
 
     // Progression: 8-slot grid
@@ -612,7 +600,7 @@ struct StrumPracticeView: View {
             HStack {
                 Text("和弦进行")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
                 Spacer()
                 // Beats per chord selector
                 HStack(spacing: 0) {
@@ -622,31 +610,31 @@ struct StrumPracticeView: View {
                         } label: {
                             Text("\(b)拍")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(progression.beatsPerChord == b ? .black : .white.opacity(0.6))
+                                .foregroundColor(progression.beatsPerChord == b ? .black : palette.body)
                                 .padding(.horizontal, 9).padding(.vertical, 4)
-                                .background(progression.beatsPerChord == b ? theme.accent : Color.white.opacity(0.08))
+                                .background(progression.beatsPerChord == b ? theme.accent : palette.cardFill)
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(theme.accent.opacity(0.18), lineWidth: 1))
 
                 Button { withAnimation { progression.loopMode.toggle() } } label: {
                     Image(systemName: "repeat")
                         .font(.system(size: 12))
-                        .foregroundColor(progression.loopMode ? theme.accent : .white.opacity(0.35))
+                        .foregroundColor(progression.loopMode ? theme.accent : palette.muted)
                         .padding(6)
-                        .background(progression.loopMode ? theme.accent.opacity(0.18) : Color.white.opacity(0.08),
+                        .background(progression.loopMode ? theme.accent.opacity(0.18) : palette.cardFill,
                                     in: Circle())
                 }
 
                 Button { withAnimation { progression.clearAll(); assigningSlot = nil } } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.40))
+                        .foregroundColor(palette.muted)
                         .padding(6)
-                        .background(Color.white.opacity(0.08), in: Circle())
+                        .background(palette.cardFill, in: Circle())
                 }
             }
 
@@ -673,9 +661,9 @@ struct StrumPracticeView: View {
                             } label: {
                                 Text(cat.rawValue)
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(chordCategory == cat ? .black : .white.opacity(0.6))
+                                    .foregroundColor(chordCategory == cat ? .black : palette.body)
                                     .padding(.horizontal, 9).padding(.vertical, 4)
-                                    .background(chordCategory == cat ? theme.accent : Color.white.opacity(0.10),
+                                    .background(chordCategory == cat ? theme.accent : palette.cardFill,
                                                 in: Capsule())
                             }
                             .buttonStyle(.plain)
@@ -697,9 +685,9 @@ struct StrumPracticeView: View {
                             } label: {
                                 Text("\(chord.emoji)\(chord.name)")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(palette.title)
                                     .padding(.horizontal, 10).padding(.vertical, 5)
-                                    .background(theme.accent.opacity(0.20), in: Capsule())
+                                    .background(theme.accent.opacity(0.14), in: Capsule())
                                     .overlay(Capsule().stroke(theme.accent.opacity(0.4), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
@@ -710,12 +698,7 @@ struct StrumPracticeView: View {
             }
         }
         .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1))
-        )
+        .appCardStyle(cornerRadius: 14)
     }
 
     private func progressionSlotCell(index: Int) -> some View {
@@ -744,7 +727,7 @@ struct StrumPracticeView: View {
                 } else {
                     Image(systemName: isAssigning ? "plus.circle.fill" : "plus")
                         .font(.system(size: 12))
-                        .foregroundColor(isAssigning ? theme.accent : .white.opacity(0.22))
+                        .foregroundColor(isAssigning ? theme.accent : palette.muted)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -753,13 +736,13 @@ struct StrumPracticeView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isActive    ? theme.accent :
                           isAssigning ? theme.accent.opacity(0.25) :
-                          chord != nil ? Color.white.opacity(0.10) :
-                                         Color.white.opacity(0.05))
+                          chord != nil ? palette.softFill :
+                                         palette.cardFill)
                     .overlay(RoundedRectangle(cornerRadius: 8)
                         .stroke(isActive    ? theme.accent :
                                 isAssigning ? theme.accent.opacity(0.80) :
                                 chord != nil ? theme.accent.opacity(0.30) :
-                                               Color.white.opacity(0.10), lineWidth: 1.5))
+                                               theme.accent.opacity(0.12), lineWidth: 1.5))
             )
             .shadow(color: isActive ? theme.glow.opacity(0.5) : .clear, radius: 6)
             .animation(.spring(response: 0.22), value: isActive)
@@ -787,12 +770,12 @@ struct StrumPracticeView: View {
             .padding(.vertical, 13)
             .background(
                 Capsule()
-                    .fill(isPlaying ? Color.white.opacity(0.15) : theme.accent)
+                    .fill(isPlaying ? palette.softFill : theme.accent)
             )
             .shadow(color: isPlaying ? .clear : theme.glow.opacity(0.5), radius: 12)
             .overlay(
                 Capsule()
-                    .stroke(isPlaying ? Color.white.opacity(0.25) : Color.clear, lineWidth: 1.5)
+                    .stroke(isPlaying ? theme.accent.opacity(0.18) : Color.clear, lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)
@@ -846,11 +829,3 @@ struct StrumPracticeView: View {
 }
 
 // MARK: - Preview
-#Preview {
-    StrumPracticeView(
-        vm: GuitarViewModel(),
-        metronome: MetronomeEngine(),
-        progression: ProgressionEngine(),
-        themeEngine: ThemeEngine()
-    )
-}

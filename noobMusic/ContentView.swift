@@ -10,12 +10,15 @@ enum PanelID: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+
     @StateObject private var vm          = GuitarViewModel()
     @StateObject private var metronome   = MetronomeEngine()
     @StateObject private var mic         = MicListenerEngine()
     @StateObject private var progression = ProgressionEngine()
-    @StateObject private var themeEngine = ThemeEngine()
-    @StateObject private var practiceLog = PracticeLogEngine()
+    @StateObject private var themeEngine: ThemeEngine
+    @StateObject private var practiceLog: PracticeLogEngine
 
     @State private var lastStrumTime   : Date          = .distantPast
     @State private var chordCategory   : ChordCategory = .major
@@ -35,7 +38,16 @@ struct ContentView: View {
     @State private var draggingPanel   : PanelID? = nil
     @State private var dragTranslation : CGFloat  = 0
 
+    private let palette = SurfacePalette()
     private var theme: AppTheme { themeEngine.current }
+
+    init(
+        themeEngine: ThemeEngine = ThemeEngine(),
+        practiceLog: PracticeLogEngine = PracticeLogEngine()
+    ) {
+        _themeEngine = StateObject(wrappedValue: themeEngine)
+        _practiceLog = StateObject(wrappedValue: practiceLog)
+    }
 
     // MARK: - Body
     var body: some View {
@@ -43,8 +55,8 @@ struct ContentView: View {
             ZStack {
                 // Background
                 LinearGradient(
-                    colors: [Color(red: 0.10, green: 0.06, blue: 0.02),
-                             Color(red: 0.18, green: 0.11, blue: 0.04)],
+                    colors: [Color(red: 0.95, green: 0.94, blue: 0.90),
+                             Color(red: 0.87, green: 0.84, blue: 0.77)],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
@@ -61,17 +73,31 @@ struct ContentView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .ignoresSafeArea(edges: .bottom)
         .onChange(of: vm.selectedChord) { mic.targetChord = vm.selectedChord }
+        .onChange(of: vm.capoFret)      { mic.capoFret = vm.capoFret }
         .onChange(of: metronome.bpm)    { progression.updateBPM(metronome.bpm) }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                practiceLog.startTracking()
+            case .background, .inactive:
+                practiceLog.stopTracking()
+            @unknown default:
+                break
+            }
+        }
         .onAppear {
             let vmRef = vm
             progression.onChordChange = { chord in
                 guard let chord else { return }
                 vmRef.playChord(chord)
             }
+            mic.targetChord = vm.selectedChord
+            mic.capoFret = vm.capoFret
             progression.updateBPM(metronome.bpm)
+            practiceLog.startTracking()
         }
         .fullScreenCover(isPresented: $showStrumPractice) {
             StrumPracticeView(
@@ -84,8 +110,6 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showPracticeLog) {
             PracticeLogView(log: practiceLog, themeEngine: themeEngine)
         }
-        .onAppear  { practiceLog.startTracking() }
-        .onDisappear { practiceLog.stopTracking() }
     }
 
     // MARK: - Dynamic sizing
@@ -287,9 +311,9 @@ struct ContentView: View {
     private var headerBar: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("🎸 Acoustic Guitar")
+                Text("练习台")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color(red: 0.15, green: 0.11, blue: 0.08))
 
                 Group {
                     if let chord = vm.selectedChord {
@@ -302,8 +326,8 @@ struct ContentView: View {
                         Text("单音  \(vm.lastNote)")
                             .foregroundColor(Color(red: 0.4, green: 0.9, blue: 0.7))
                     } else {
-                        Text("点击指板或和弦开始演奏")
-                            .foregroundColor(.white.opacity(0.35))
+                        Text("指板、和弦库与节拍控制")
+                            .foregroundColor(Color(red: 0.40, green: 0.33, blue: 0.25))
                     }
                 }
                 .font(.system(size: 13, weight: .medium))
@@ -311,6 +335,17 @@ struct ContentView: View {
             }
 
             Spacer()
+
+            Button {
+                dismiss()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.left")
+                    Text("返回")
+                }
+                .appBackButtonStyle()
+            }
+            .buttonStyle(.plain)
 
             toolbarButton(icon: "metronome.fill",
                           active: showMetronome || metronome.isPlaying,
@@ -349,9 +384,9 @@ struct ContentView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 17))
-                .foregroundColor(active ? color : .white.opacity(0.50))
+                .foregroundColor(active ? color : palette.body)
                 .padding(9)
-                .background(active ? color.opacity(0.18) : Color.white.opacity(0.08), in: Circle())
+                .background(active ? color.opacity(0.18) : palette.cardFill, in: Circle())
         }
     }
 
@@ -359,9 +394,9 @@ struct ContentView: View {
     private var strumArea: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .stroke(theme.accent.opacity(0.12), lineWidth: 1))
 
             VStack(spacing: 6) {
                 Image(systemName: "hand.draw.fill")
@@ -370,7 +405,7 @@ struct ContentView: View {
 
                 Text("上下滑动扫弦")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.40))
+                    .foregroundColor(palette.muted)
 
                 HStack(spacing: 8) {
                     strumButton("↓ 顺扫", direction: .downward)
@@ -383,18 +418,18 @@ struct ContentView: View {
                         Button { vm.strumSpeedIndex = i } label: {
                             Text(sp.label)
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(vm.strumSpeedIndex == i ? .black : .white.opacity(0.6))
+                                .foregroundColor(vm.strumSpeedIndex == i ? .black : palette.body)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 4)
                                 .background(vm.strumSpeedIndex == i
                                             ? theme.accent
-                                            : Color.white.opacity(0.08))
+                                            : palette.softFill)
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(theme.accent.opacity(0.12), lineWidth: 1))
                 .padding(.horizontal, 6)
             }
             .padding(.horizontal, 6)
@@ -415,15 +450,17 @@ struct ContentView: View {
         Button { doStrum(direction: direction) } label: {
             Text(label)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(palette.title)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(theme.accent.opacity(0.25), in: Capsule())
+                .background(theme.accent.opacity(0.18), in: Capsule())
         }
     }
 
     private func doStrum(direction: StrumDirection) {
-        let frets = vm.fretPosition.map { max(0, $0) }
+        let frets = vm.fretPosition.map { fret in
+            fret >= 0 ? max(0, fret) + vm.capoFret : fret
+        }
         if let chord = vm.selectedChord {
             for (i, f) in chord.frets.enumerated() where f < 0 { vm.engine.mute(string: i) }
         }
@@ -435,12 +472,12 @@ struct ContentView: View {
     private var infoPanel: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
                             (vm.lastNote.isEmpty && vm.detectedChord == nil)
-                                ? Color.white.opacity(0.10)
+                                ? theme.accent.opacity(0.12)
                                 : Color(red: 0.4, green: 0.9, blue: 0.7).opacity(0.40),
                             lineWidth: 1.5
                         )
@@ -450,11 +487,11 @@ struct ContentView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "music.note.list")
                         .font(.system(size: 20))
-                        .foregroundColor(.white.opacity(0.15))
+                        .foregroundColor(palette.muted.opacity(0.55))
                     Text("按下琴弦\n查看音名/和弦")
                         .font(.system(size: 10))
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.white.opacity(0.22))
+                        .foregroundColor(palette.muted)
                 }
             } else {
                 VStack(spacing: 4) {
@@ -462,7 +499,7 @@ struct ContentView: View {
                         VStack(spacing: 1) {
                             Text("识别和弦")
                                 .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.35))
+                                .foregroundColor(palette.muted)
                             Text(det)
                                 .font(.system(size: 32, weight: .black, design: .rounded))
                                 .foregroundColor(Color(red: 0.4, green: 0.9, blue: 0.7))
@@ -482,7 +519,7 @@ struct ContentView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(vm.lastNote)
                                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                        .foregroundColor(.white.opacity(0.50))
+                                        .foregroundColor(palette.body)
                                     stringFretBadges
                                 }
                             } else {
@@ -509,9 +546,9 @@ struct ContentView: View {
             }
             Text(vm.lastNoteFret == 0 ? "空弦" : "第\(vm.lastNoteFret)品")
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.45))
+                .foregroundColor(palette.body)
                 .padding(.horizontal, 4).padding(.vertical, 2)
-                .background(Color.white.opacity(0.08), in: Capsule())
+                .background(palette.softFill, in: Capsule())
         }
     }
 
@@ -519,16 +556,16 @@ struct ContentView: View {
     private var capoPanel: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 16)
                     .stroke(vm.capoFret > 0
                             ? Color(red: 0.9, green: 0.7, blue: 0.2).opacity(0.5)
-                            : Color.white.opacity(0.10), lineWidth: 1.5))
+                            : theme.accent.opacity(0.12), lineWidth: 1.5))
 
             VStack(spacing: 5) {
                 Text("变调夹")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.40))
+                    .foregroundColor(palette.muted)
 
                 if vm.capoFret > 0 {
                     Text("第\(vm.capoFret)品")
@@ -538,7 +575,7 @@ struct ContentView: View {
                 } else {
                     Text("无")
                         .font(.system(size: 16, weight: .black, design: .rounded))
-                        .foregroundColor(.white.opacity(0.20))
+                        .foregroundColor(palette.muted.opacity(0.65))
                 }
 
                 HStack(spacing: 8) {
@@ -566,9 +603,9 @@ struct ContentView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white.opacity(0.75))
+                .foregroundColor(palette.body)
                 .frame(width: 26, height: 26)
-                .background(Color.white.opacity(0.10), in: Circle())
+                .background(palette.softFill, in: Circle())
         }
     }
 
@@ -576,7 +613,7 @@ struct ContentView: View {
     private var metronomePanel: some View {
         HStack(spacing: 16) {
             Circle()
-                .fill(metronome.beatFlash ? theme.accent : Color.white.opacity(0.12))
+                .fill(metronome.beatFlash ? theme.accent : palette.softFill)
                 .frame(width: 46, height: 46)
                 .shadow(color: metronome.beatFlash ? theme.glow.opacity(0.7) : .clear, radius: 10)
                 .animation(.easeOut(duration: 0.05), value: metronome.beatFlash)
@@ -584,7 +621,7 @@ struct ContentView: View {
             VStack(spacing: 4) {
                 Text("\(metronome.bpm)  BPM")
                     .font(.system(size: 30, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
 
                 Slider(
                     value: Binding(
@@ -600,16 +637,16 @@ struct ContentView: View {
             Button { metronome.toggle() } label: {
                 Image(systemName: metronome.isPlaying ? "stop.fill" : "play.fill")
                     .font(.system(size: 20))
-                    .foregroundColor(metronome.isPlaying ? theme.accent : .white)
+                    .foregroundColor(metronome.isPlaying ? theme.accent : palette.body)
                     .frame(width: 46, height: 46)
-                    .background(Color.white.opacity(0.10), in: Circle())
+                    .background(palette.softFill, in: Circle())
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 16)
                     .stroke(theme.accent.opacity(0.25), lineWidth: 1))
         )
@@ -621,7 +658,7 @@ struct ContentView: View {
             HStack(spacing: 10) {
                 Text("🎼 和弦进行")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
 
                 Spacer()
 
@@ -632,29 +669,29 @@ struct ContentView: View {
                         } label: {
                             Text("\(beats)拍")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(progression.beatsPerChord == beats ? .black : .white.opacity(0.6))
+                                .foregroundColor(progression.beatsPerChord == beats ? .black : palette.body)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 4)
                                 .background(progression.beatsPerChord == beats
                                             ? theme.accent
-                                            : Color.white.opacity(0.08))
+                                            : palette.softFill)
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(Capsule().stroke(theme.accent.opacity(0.12), lineWidth: 1))
 
                 Button {
                     withAnimation { progression.loopMode.toggle() }
                 } label: {
                     Image(systemName: "repeat")
                         .font(.system(size: 13))
-                        .foregroundColor(progression.loopMode ? theme.accent : .white.opacity(0.35))
+                        .foregroundColor(progression.loopMode ? theme.accent : palette.muted)
                         .padding(6)
                         .background(progression.loopMode
                                     ? theme.accent.opacity(0.18)
-                                    : Color.white.opacity(0.08), in: Circle())
+                                    : palette.softFill, in: Circle())
                 }
 
                 Button {
@@ -662,9 +699,9 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.45))
+                        .foregroundColor(palette.muted)
                         .padding(6)
-                        .background(Color.white.opacity(0.08), in: Circle())
+                        .background(palette.softFill, in: Circle())
                 }
 
                 Button {
@@ -677,9 +714,9 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: progression.isPlaying ? "stop.fill" : "play.fill")
                         .font(.system(size: 15))
-                        .foregroundColor(progression.isPlaying ? theme.accent : .white)
+                        .foregroundColor(progression.isPlaying ? theme.accent : palette.body)
                         .frame(width: 34, height: 34)
-                        .background(Color.white.opacity(0.10), in: Circle())
+                        .background(palette.softFill, in: Circle())
                 }
             }
 
@@ -699,7 +736,7 @@ struct ContentView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 16)
                     .stroke(theme.accent.opacity(0.22), lineWidth: 1))
         )
@@ -732,7 +769,7 @@ struct ContentView: View {
                 } else {
                     Image(systemName: isAssigning ? "plus.circle.fill" : "plus")
                         .font(.system(size: 14))
-                        .foregroundColor(isAssigning ? theme.accent : .white.opacity(0.22))
+                        .foregroundColor(isAssigning ? theme.accent : palette.muted)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -741,14 +778,14 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(isActive    ? theme.accent :
                           isAssigning ? theme.accent.opacity(0.25) :
-                          chord != nil ? Color.white.opacity(0.10) :
-                                         Color.white.opacity(0.05))
+                          chord != nil ? palette.softFill :
+                                         palette.cardFill)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(isActive    ? theme.accent :
                                     isAssigning ? theme.accent.opacity(0.80) :
                                     chord != nil ? theme.accent.opacity(0.30) :
-                                                   Color.white.opacity(0.10),
+                                                   theme.accent.opacity(0.10),
                                     lineWidth: isActive ? 0 : 1.5)
                     )
             )
@@ -777,30 +814,30 @@ struct ContentView: View {
                     .font(.system(size: 18))
                     .foregroundColor(mic.isListening
                                      ? Color(red: 0.4, green: 0.9, blue: 0.7)
-                                     : .white.opacity(0.45))
+                                     : palette.muted)
                     .frame(width: 44, height: 44)
                     .background(mic.isListening
                                 ? Color(red: 0.4, green: 0.9, blue: 0.7).opacity(0.15)
-                                : Color.white.opacity(0.08), in: Circle())
+                                : palette.softFill, in: Circle())
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(mic.isListening ? "监听中..." : "开始监听真实吉他")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
                 if let chord = vm.selectedChord {
                     Text("目标和弦: \(chord.name)")
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.45))
+                        .foregroundColor(palette.body)
                 } else {
                     Text("请先选择一个和弦")
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.30))
+                        .foregroundColor(palette.muted)
                 }
                 if !mic.detectedNote.isEmpty {
                     Text("检测音: \(mic.detectedNote)")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.50))
+                        .foregroundColor(palette.body)
                 }
             }
 
@@ -810,12 +847,12 @@ struct ContentView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
+                .fill(palette.cardFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(mic.isListening
                                 ? Color(red: 0.4, green: 0.9, blue: 0.7).opacity(0.30)
-                                : Color.white.opacity(0.10), lineWidth: 1)
+                                : theme.accent.opacity(0.10), lineWidth: 1)
                 )
         )
     }
@@ -825,7 +862,7 @@ struct ContentView: View {
         let score = mic.matchScore
         return ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.10), lineWidth: 5)
+                .stroke(palette.softFill, lineWidth: 5)
                 .frame(width: 54, height: 54)
             Circle()
                 .trim(from: 0, to: score)
@@ -839,7 +876,7 @@ struct ContentView: View {
                     .foregroundColor(scoreColor)
                 Text(micFeedbackLabel)
                     .font(.system(size: 7, weight: .medium))
-                    .foregroundColor(.white.opacity(0.40))
+                    .foregroundColor(palette.muted)
             }
         }
     }
@@ -862,12 +899,12 @@ struct ContentView: View {
                         } label: {
                             Text(cat.rawValue)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(chordCategory == cat ? .black : .white.opacity(0.6))
+                                .foregroundColor(chordCategory == cat ? .black : palette.body)
                                 .padding(.horizontal, 13)
                                 .padding(.vertical, 6)
                                 .background(chordCategory == cat
                                             ? theme.accent
-                                            : Color.white.opacity(0.10), in: Capsule())
+                                            : palette.cardFill, in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
@@ -898,12 +935,12 @@ struct ContentView: View {
                         } label: {
                             Text(cat.rawValue)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(chordCategory == cat ? .black : .white.opacity(0.6))
+                                .foregroundColor(chordCategory == cat ? .black : palette.body)
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 5)
                                 .background(chordCategory == cat
                                             ? theme.accent
-                                            : Color.white.opacity(0.10), in: Capsule())
+                                            : palette.cardFill, in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
@@ -926,9 +963,9 @@ struct ContentView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.04))
+                .fill(palette.cardFill)
                 .overlay(RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    .stroke(theme.accent.opacity(0.10), lineWidth: 1))
         )
     }
 
@@ -951,7 +988,7 @@ struct ContentView: View {
                 Text(chord.emoji).font(.system(size: 16))
                 Text(chord.name)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(isSelected ? theme.accent : .white)
+                    .foregroundColor(isSelected ? theme.accent : palette.title)
                 miniDiagram(chord.frets)
             }
             .padding(.horizontal, 10)
@@ -960,11 +997,11 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(isSelected  ? theme.accent.opacity(0.20) :
                           isAssigning ? theme.accent.opacity(0.08) :
-                                        Color.white.opacity(0.07))
+                                        palette.cardFill)
                     .overlay(RoundedRectangle(cornerRadius: 12)
                         .stroke(isSelected  ? theme.accent.opacity(0.6) :
                                 isAssigning ? theme.accent.opacity(0.35) :
-                                              Color.clear, lineWidth: 1.5))
+                                              theme.accent.opacity(0.08), lineWidth: 1.5))
             )
         }
         .buttonStyle(.plain)
@@ -976,7 +1013,7 @@ struct ContentView: View {
                 let f = frets[s]
                 ZStack {
                     Circle()
-                        .fill(f < 0 ? Color.red.opacity(0.35) : Color.white.opacity(0.12))
+                        .fill(f < 0 ? Color.red.opacity(0.35) : palette.softFill)
                         .frame(width: 9, height: 9)
                     if f > 0 {
                         Text("\(f)").font(.system(size: 5, weight: .bold)).foregroundColor(theme.accent)
@@ -991,14 +1028,14 @@ struct ContentView: View {
     // MARK: - Theme Picker Overlay
     private var themePickerOverlay: some View {
         ZStack {
-            Color.black.opacity(0.55)
+            Color.black.opacity(0.16)
                 .ignoresSafeArea()
                 .onTapGesture { withAnimation { showThemePicker = false } }
 
             VStack(spacing: 16) {
                 Text("选择主题颜色")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(palette.title)
 
                 HStack(spacing: 14) {
                     ForEach(AppTheme.presets) { t in themeChip(t) }
@@ -1009,16 +1046,16 @@ struct ContentView: View {
                 } label: {
                     Text("完成")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(palette.title)
                         .padding(.horizontal, 28)
                         .padding(.vertical, 8)
-                        .background(theme.accent.opacity(0.25), in: Capsule())
+                        .background(theme.accent.opacity(0.16), in: Capsule())
                 }
             }
             .padding(24)
             .background(
                 RoundedRectangle(cornerRadius: 22)
-                    .fill(Color(red: 0.12, green: 0.08, blue: 0.04))
+                    .fill(palette.cardFill)
                     .overlay(RoundedRectangle(cornerRadius: 22)
                         .stroke(theme.accent.opacity(0.30), lineWidth: 1.5))
             )
@@ -1033,11 +1070,11 @@ struct ContentView: View {
                 Circle()
                     .fill(t.accent)
                     .frame(width: 38, height: 38)
-                    .overlay(Circle().stroke(Color.white.opacity(isSelected ? 1.0 : 0), lineWidth: 3))
+                    .overlay(Circle().stroke(palette.cardFill.opacity(isSelected ? 1.0 : 0), lineWidth: 3))
                     .shadow(color: isSelected ? t.glow.opacity(0.7) : .clear, radius: 8)
                 Text(t.name)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(isSelected ? t.accent : .white.opacity(0.55))
+                    .foregroundColor(isSelected ? t.accent : palette.body)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .frame(width: 48)
@@ -1054,8 +1091,4 @@ private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
-}
-
-#Preview {
-    ContentView()
 }

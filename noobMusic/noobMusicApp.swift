@@ -11,7 +11,7 @@ import SwiftUI
 struct noobMusicApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HomeHubView()
         }
     }
 }
